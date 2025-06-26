@@ -1,6 +1,11 @@
 import { Loader2, Search, Shield, Star, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
-import { addCode, IcdSearchResult, searchIcdCodes } from "../services/api";
+import {
+  addCode,
+  fetchCodingResults,
+  IcdSearchResult,
+  searchIcdCodes,
+} from "../services/api";
 import { MedicalCode, SupportingInfo } from "../types/medical-codes";
 
 interface DrawnBoundingBox {
@@ -329,6 +334,7 @@ const AddCodeModal: React.FC<AddCodeModalProps> = ({
         target,
         codeWithTarget
       );
+      fetchCodingResults("EP_CERVANTES_MORAN_MARIA_D");
       onAddCode(codeWithTarget, target);
       handleClose();
     } catch (error) {

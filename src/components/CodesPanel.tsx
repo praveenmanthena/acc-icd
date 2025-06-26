@@ -15,7 +15,7 @@ import {
   XCircle,
 } from "lucide-react";
 import React, { useState } from "react";
-import { addCode, undoCodeDecision } from "../services/api";
+import { addCode, getUserData, undoCodeDecision } from "../services/api";
 import { HighlightRequest, MedicalCode } from "../types/medical-codes";
 import AddCodeModal from "./AddCodeModal";
 import CodeCard from "./CodeCard";
@@ -36,6 +36,7 @@ interface CodesPanelProps {
   sessionActions?: Set<string>; // NEW: Persistent session actions tracking
   onSessionAction?: (codeId: string) => void; // NEW: Session action handler
   onUndoAction?: (codeId: string) => void; // NEW: Undo action handler
+  onReorderCodes?: (codes: MedicalCode[]) => void; // NEW: Reorder codes handler
 }
 
 // Success Notification Component - UPDATED: Positioned near search bar area
@@ -176,6 +177,7 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
   sessionActions = new Set(), // NEW: Persistent session actions
   onSessionAction, // NEW: Session action handler
   onUndoAction, // NEW: Undo action handler
+  onReorderCodes, // NEW: Reorder codes handler
 }) => {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeFilter, setActiveFilter] = useState<
@@ -215,6 +217,14 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
   console.log(
     "CodesPanel - codes with is_newly_added:",
     codes.filter((c) => c.is_newly_added).map((c) => c.diagnosis_code)
+  );
+  console.log(
+    "CodesPanel - codes with code_type ADDED:",
+    codes.filter((c) => c.code_type === "ADDED").map((c) => c.diagnosis_code)
+  );
+  console.log(
+    "CodesPanel - codes with code_type AI_MODEL:",
+    codes.filter((c) => c.code_type === "AI_MODEL").map((c) => c.diagnosis_code)
   );
   console.log("CodesPanel - sessionActions:", Array.from(sessionActions)); // NEW: Log session actions
 
@@ -392,16 +402,23 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
 
       console.log("Add suggestion API response:", response);
 
-      // Add to local state with proper classification
+      // FIXED: Get current user data from token instead of hardcoding "admin"
+      const currentUser = getUserData();
+      const currentUsername = currentUser?.username || "Unknown User";
+
+      // Add to local state with proper classification and user attribution
       const codeWithTarget = {
         ...newCode,
         is_primary: target === "primary",
-        code_type: target,
+        code_type: "ADDED", // NEW: Set code_type to ADDED for newly added codes
         is_newly_added: true, // Mark as newly added
-        added_by: "admin", // Mark as added by admin
+        added_by: currentUsername, // FIXED: Use actual username from token
       };
 
       console.log("Adding suggestion to local state:", codeWithTarget);
+      console.log("Current user from token:", currentUser);
+      console.log("Using username:", currentUsername);
+
       onAddCode?.(codeWithTarget, target);
       setIsAddModalOpen(false);
 
@@ -466,24 +483,25 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
     } else if (activeTab === "rejected") {
       return filteredCodes.filter((code) => code.user_decision === "rejected");
     } else if (activeTab === "newAdded") {
-      // All newly added codes—API flag, local set, or admin-added
+      // UPDATED: Filter by code_type "ADDED" from API
       return filteredCodes.filter(
         (code) =>
+          code.code_type === "ADDED" ||
           code.is_newly_added === true ||
-          newlyAddedCodes.has(code.diagnosis_code) ||
-          code.added_by === "admin"
+          newlyAddedCodes.has(code.diagnosis_code)
       );
     } else if (activeTab === "suggestions") {
-      // Suggestions: exclude anything considered "newly added"
+      // UPDATED: Show AI Model recommendations (code_type "AI_MODEL")
       return filteredCodes.filter(
         (code) =>
-          !code.is_newly_added &&
-          !newlyAddedCodes.has(code.diagnosis_code) &&
-          code.added_by !== "admin"
+          code.code_type === "AI_MODEL" ||
+          (code.code_type !== "ADDED" &&
+            !code.is_newly_added &&
+            !newlyAddedCodes.has(code.diagnosis_code))
       );
     }
 
-    /* Fallback (shouldn’t be reached) */
+    /* Fallback (shouldn't be reached) */
     return filteredCodes;
   };
 
@@ -499,7 +517,7 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
     return code.is_primary === false || code.code_type === "secondary";
   });
 
-  // SIMPLIFIED: Calculate counts for all codes - just count what we have
+  // FIXED: Calculate counts for specific code types
   const acceptedCount = codes.filter(
     (code) => code.user_decision === "accepted"
   ).length;
@@ -507,30 +525,54 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
     (code) => code.user_decision === "rejected"
   ).length;
 
-  // Calculate newly added count from both API and local tracking
+  // UPDATED: Calculate newly added count using code_type "ADDED"
   const newAddedCount = codes.filter(
     (code) =>
+      code.code_type === "ADDED" ||
       code.is_newly_added === true ||
-      newlyAddedCodes.has(code.diagnosis_code) ||
-      code.added_by === "admin"
+      newlyAddedCodes.has(code.diagnosis_code)
   ).length;
 
-  // SIMPLIFIED: Calculate pending suggestions - codes that don't have a decision yet
-  const pendingSuggestionsCount = codes.filter(
+  // UPDATED: Calculate AI model suggestions count using code_type "AI_MODEL"
+  const aiModelSuggestionsCount = codes.filter(
+    (code) =>
+      code.code_type === "AI_MODEL" ||
+      (code.code_type !== "ADDED" &&
+        !code.is_newly_added &&
+        !newlyAddedCodes.has(code.diagnosis_code))
+  ).length;
+
+  // FIXED: Calculate pending suggestions - only count AI Model codes that need decisions
+  const aiModelCodes = codes.filter((code) => code.code_type === "AI_MODEL");
+  const pendingSuggestionsCount = aiModelCodes.filter(
     (code) => !code.user_decision || code.user_decision === "pending"
   ).length;
 
-  // SIMPLIFIED: Check if all suggestions have been decided
-  const allSuggestionsDecided =
-    pendingSuggestionsCount === 0 && codes.length > 0;
+  // FIXED: Calculate accepted/rejected counts for AI Model codes only
+  const aiModelAcceptedCount = aiModelCodes.filter(
+    (code) => code.user_decision === "accepted"
+  ).length;
+  const aiModelRejectedCount = aiModelCodes.filter(
+    (code) => code.user_decision === "rejected"
+  ).length;
 
-  console.log("SIMPLIFIED calculation debug:", {
+  // FIXED: Check if all AI Model suggestions have been decided
+  const allSuggestionsDecided =
+    pendingSuggestionsCount === 0 && aiModelCodes.length > 0;
+
+  console.log("FIXED calculation debug:", {
     totalCodes: codes.length,
+    aiModelCodes: aiModelCodes.length,
+    aiModelAcceptedCount,
+    aiModelRejectedCount,
+    pendingSuggestionsCount,
     acceptedCount,
     rejectedCount,
     newAddedCount,
-    pendingSuggestionsCount,
+    aiModelSuggestionsCount,
     allSuggestionsDecided,
+    codesWithAIModel: codes.filter((c) => c.code_type === "AI_MODEL").length,
+    codesWithADDED: codes.filter((c) => c.code_type === "ADDED").length,
   });
 
   const renderCodeSection = (
@@ -542,7 +584,7 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
 
     return (
       <div
-        className={`rounded-lg border-2 mb-6 ${
+        className={`rounded-lg border-2 mb-6 transition-all duration-200 ${
           isPrimary
             ? "bg-green-50 border-green-200"
             : "bg-blue-50 border-blue-200"
@@ -565,33 +607,35 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
                 {title} ({sectionCodes.length})
               </span>
             </h3>
-            {/* UPDATED: Single Add ICD Code button (no target parameter) */}
-            <button
-              onClick={handleAddCodeClick}
-              disabled={isSubmittingCode || !currentDocId}
-              className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                isPrimary
-                  ? "bg-green-600 hover:bg-green-700 disabled:bg-green-400"
-                  : "bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400"
-              }`}
-              title={
-                !currentDocId
-                  ? "Document ID required to add suggestions"
-                  : "Add new ICD suggestion"
-              }
-            >
-              {isSubmittingCode ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Adding...</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4" />
-                  <span>Add ICD Code</span>
-                </>
-              )}
-            </button>
+            {/* UPDATED: Only show Add ICD Code button if NOT in newly added tab */}
+            {activeTab !== "newAdded" && (
+              <button
+                onClick={handleAddCodeClick}
+                disabled={isSubmittingCode || !currentDocId}
+                className={`flex items-center space-x-2 px-3 py-1.5 rounded-md text-white text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  isPrimary
+                    ? "bg-green-600 hover:bg-green-700 disabled:bg-green-400"
+                    : "bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400"
+                }`}
+                title={
+                  !currentDocId
+                    ? "Document ID required to add suggestions"
+                    : "Add new ICD suggestion"
+                }
+              >
+                {isSubmittingCode ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Adding...</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4" />
+                    <span>Add ICD Code</span>
+                  </>
+                )}
+              </button>
+            )}
           </div>
           <p className="text-gray-600 text-sm italic">
             {isPrimary
@@ -617,13 +661,14 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
                 onReject={handleRejectCode}
                 onUpdateCode={onUpdateCode}
                 showDecisionButtons={
-                  activeTab === "suggestions" || activeTab === "newAdded"
+                  activeTab === "suggestions" ||
+                  (activeTab === "newAdded" ? false : true) // UPDATED: Don't show decision buttons in newly added tab
                 }
                 isPrimary={isPrimary}
-                currentDocId={currentDocId} // Pass document ID to CodeCard
-                onSessionExpired={onSessionExpired} // Pass session expiration handler to CodeCard
-                sessionActions={sessionActions} // NEW: Pass session actions to CodeCard
-                onSessionAction={onSessionAction} // NEW: Pass session action handler to CodeCard
+                currentDocId={currentDocId}
+                onSessionExpired={onSessionExpired}
+                sessionActions={sessionActions}
+                onSessionAction={onSessionAction}
               />
 
               {/* FIXED: Enhanced undo button with better positioning to prevent overlap */}
@@ -731,12 +776,14 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
               <span>AI Model Recommendations</span>
               <span
                 className={`text-xs px-2 py-1 rounded-full ${
-                  codes.length > 0
+                  aiModelSuggestionsCount > 0
                     ? "bg-blue-100 text-blue-800"
                     : "bg-gray-100 text-gray-600"
                 }`}
               >
-                {selectedIcdCode ? filteredCodes.length : codes.length}
+                {selectedIcdCode
+                  ? filteredCodes.length
+                  : aiModelSuggestionsCount}
               </span>
             </button>
 
@@ -819,14 +866,14 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
             </div>
           </div>
 
-          {/* SIMPLIFIED: Progress Indicator */}
-          {codes.length > 0 && !selectedIcdCode && (
+          {/* FIXED: Progress Indicator - Only count AI Model codes */}
+          {aiModelCodes.length > 0 && !selectedIcdCode && (
             <div className="mb-4">
               <div className="flex items-center justify-between text-sm text-gray-600 mb-2">
                 <span>Decision Progress</span>
                 <span>
-                  {acceptedCount + rejectedCount} of {codes.length}{" "}
-                  recommendations completed
+                  {aiModelAcceptedCount + aiModelRejectedCount} of{" "}
+                  {aiModelCodes.length} recommendations completed
                 </span>
               </div>
               <div className="w-full bg-gray-200 rounded-full h-2">
@@ -834,8 +881,10 @@ const CodesPanel: React.FC<CodesPanelProps> = ({
                   className="bg-blue-600 h-2 rounded-full transition-all duration-300"
                   style={{
                     width: `${
-                      codes.length > 0
-                        ? ((acceptedCount + rejectedCount) / codes.length) * 100
+                      aiModelCodes.length > 0
+                        ? ((aiModelAcceptedCount + aiModelRejectedCount) /
+                            aiModelCodes.length) *
+                          100
                         : 0
                     }%`,
                   }}

@@ -5,7 +5,6 @@ import {
   CheckCircle2,
   ChevronDown,
   ChevronUp,
-  Edit2,
   FileText,
   Loader2,
   MapPin,
@@ -13,7 +12,6 @@ import {
   Plus,
   Save,
   Star,
-  Trash2,
   User,
   UserCheck,
   X,
@@ -203,7 +201,7 @@ const CodeCard: React.FC<CodeCardProps> = ({
 
   // Comment states
   const [isAddingComment, setIsAddingComment] = useState(false);
-  const [showCommentsSection, setShowCommentsSection] = useState(false); // NEW: Control comments section visibility
+  const [showCommentsSection, setShowCommentsSection] = useState(true); // NEW: Control comments section visibility
   const [newCommentText, setNewCommentText] = useState("");
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null);
   const [editingCommentText, setEditingCommentText] = useState("");
@@ -235,7 +233,7 @@ const CodeCard: React.FC<CodeCardProps> = ({
 
   // Check if this is a newly added code - memoized
   const isNewlyAdded = useMemo(
-    () => code.is_newly_added === true || code.added_by === "admin",
+    () => code.code_type === "ADDED",
     [code.is_newly_added, code.added_by]
   );
 
@@ -893,11 +891,18 @@ const CodeCard: React.FC<CodeCardProps> = ({
                 {code.disease_description}
               </span>
               <div style={{ width: "90px" }}> {getDecisionBadge()}</div>
-              {isNewlyAdded && (
-                <span className="ml-2 text-xs text-purple-600 font-medium flex items-center space-x-1">
-                  <Star className="w-3 h-3" />
-                  <span>Newly Added</span>
-                </span>
+
+              {isNewlyAdded && code.code_type === "ADDED" && (
+                <>
+                  <span className="ml-2 text-xs text-purple-600 font-medium flex items-center space-x-1">
+                    <Star className="w-3 h-3" />
+                    <span>Newly Added</span>
+                  </span>
+
+                  <span className="ml-2 text-xs  font-small flex items-center space-x-1">
+                    Added By:{code?.added_by}
+                  </span>
+                </>
               )}
             </div>
 
@@ -910,49 +915,51 @@ const CodeCard: React.FC<CodeCardProps> = ({
 
             <div className="flex items-center space-x-1">
               {/* When the user has **not** decided yet – show both */}
-              {code.user_decision === undefined && !isNewlyAdded && (
-                <>
-                  {/* Accept */}
-                  <button
-                    onClick={handleAccept}
-                    disabled={
-                      isAcceptingCode || isRejectingCode || !currentDocId
-                    }
-                    className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={
-                      !currentDocId
-                        ? "Document ID required to accept suggestions"
-                        : "Accept this diagnosis"
-                    }
-                  >
-                    {isAcceptingCode ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Check className="w-4 h-4" />
-                    )}
-                  </button>
+              {code.user_decision === undefined &&
+                !isNewlyAdded &&
+                code.code_type === "AI_MODEL" && (
+                  <>
+                    {/* Accept */}
+                    <button
+                      onClick={handleAccept}
+                      disabled={
+                        isAcceptingCode || isRejectingCode || !currentDocId
+                      }
+                      className="p-1.5 bg-green-100 hover:bg-green-200 text-green-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={
+                        !currentDocId
+                          ? "Document ID required to accept suggestions"
+                          : "Accept this diagnosis"
+                      }
+                    >
+                      {isAcceptingCode ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <Check className="w-4 h-4" />
+                      )}
+                    </button>
 
-                  {/* Reject */}
-                  <button
-                    onClick={handleReject}
-                    disabled={
-                      isAcceptingCode || isRejectingCode || !currentDocId
-                    }
-                    className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                    title={
-                      !currentDocId
-                        ? "Document ID required to reject suggestions"
-                        : "Reject this diagnosis"
-                    }
-                  >
-                    {isRejectingCode ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <X className="w-4 h-4" />
-                    )}
-                  </button>
-                </>
-              )}
+                    {/* Reject */}
+                    <button
+                      onClick={handleReject}
+                      disabled={
+                        isAcceptingCode || isRejectingCode || !currentDocId
+                      }
+                      className="p-1.5 bg-red-100 hover:bg-red-200 text-red-700 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      title={
+                        !currentDocId
+                          ? "Document ID required to reject suggestions"
+                          : "Reject this diagnosis"
+                      }
+                    >
+                      {isRejectingCode ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : (
+                        <X className="w-4 h-4" />
+                      )}
+                    </button>
+                  </>
+                )}
 
               {/* If already **accepted** – show only the Reject button (to undo) */}
               {code.user_decision === "accepted" && (
@@ -1207,39 +1214,178 @@ const CodeCard: React.FC<CodeCardProps> = ({
             )}
 
             {/* Enhanced Comments Section - Only show when showCommentsSection is true */}
+            {/* UPDATED: Add Comments Button - Only show when comments section is not visible */}
+            {!showCommentsSection && (
+              <div className="flex justify-end">
+                {commentsCount > 0 ? (
+                  // When comments exist, show a simple "View Comments" button
+                  <button
+                    onClick={() => setShowCommentsSection(true)}
+                    className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
+                  >
+                    <MessageCircle className="w-4 h-4" />
+                    <span>View Comments ({commentsCount})</span>
+                  </button>
+                ) : (
+                  // When no comments exist, show "Add Comments" button
+                  <button
+                    onClick={handleAddCommentsClick}
+                    className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
+                    disabled={!currentDocId}
+                    title={
+                      !currentDocId
+                        ? "Document ID required to add comments"
+                        : "Add comments to this ICD code"
+                    }
+                  >
+                    <Plus className="w-4 h-4" />
+                    <span>Add Comments</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* UPDATED: Enhanced Comments Section with new logic */}
             {showCommentsSection && (
               <div className="bg-purple-50 rounded-lg p-4 border border-purple-200">
-                <div className="flex items-center justify-between mb-4">
-                  <div className="flex items-center space-x-2">
-                    <MessageCircle className="w-4 h-4 text-purple-500" />
-                    <h4 className="font-medium text-gray-900">Comments</h4>
-                    <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
-                      {commentsCount}
-                    </span>
-                    {currentDocId && (
-                      <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
-                        Doc: {currentDocId}
-                      </span>
+                {/* UPDATED: Show header and comments when comments exist */}
+                {commentsCount > 0 ? (
+                  <>
+                    {/* Header with comment count */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <MessageCircle className="w-4 h-4 text-purple-500" />
+                        <h4 className="font-medium text-gray-900">Comments</h4>
+                        <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                          {commentsCount}
+                        </span>
+                        {currentDocId && (
+                          <span className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">
+                            Doc: {currentDocId}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Comments List */}
+                    <div className="space-y-3 mb-4">
+                      {(code.comments || []).map((comment) => (
+                        <div
+                          key={comment.id}
+                          className="bg-white rounded-lg p-3 border border-gray-200 group"
+                        >
+                          <div className="flex items-start justify-between mb-2">
+                            <div className="flex items-center space-x-2">
+                              <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
+                                {comment.added_by ? (
+                                  <UserCheck className="w-3 h-3 text-purple-600" />
+                                ) : (
+                                  <User className="w-3 h-3 text-purple-600" />
+                                )}
+                              </div>
+                              <div className="flex items-center space-x-2 text-xs text-gray-600">
+                                <span className="font-medium text-gray-900">
+                                  {comment.author}
+                                </span>
+                                {comment.added_by &&
+                                  comment.added_by !== comment.author && (
+                                    <>
+                                      <span>•</span>
+                                      <span className="text-purple-600 font-medium">
+                                        Added by: {comment.added_by}
+                                      </span>
+                                    </>
+                                  )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {editingCommentId === comment.id ? (
+                            <div className="space-y-2">
+                              <textarea
+                                value={editingCommentText}
+                                onChange={(e) =>
+                                  setEditingCommentText(e.target.value)
+                                }
+                                rows={3}
+                                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-none"
+                              />
+                              <div className="flex items-center justify-end space-x-2">
+                                <button
+                                  onClick={handleCancelEditComment}
+                                  className="flex items-center space-x-1 px-2 py-1 text-gray-600 hover:text-gray-800 transition-colors text-xs"
+                                >
+                                  <X className="w-3 h-3" />
+                                  <span>Cancel</span>
+                                </button>
+                                <button
+                                  onClick={handleSaveEditComment}
+                                  disabled={!editingCommentText.trim()}
+                                  className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs"
+                                >
+                                  <Save className="w-3 h-3" />
+                                  <span>Save</span>
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
+                              {comment.text}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Add Comment Button - shown below existing comments */}
+                    {!isAddingComment && (
+                      <button
+                        onClick={() => setIsAddingComment(true)}
+                        className="w-medium flex items-center justify-center space-x-2 px-3 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
+                        disabled={!currentDocId}
+                        title={
+                          !currentDocId
+                            ? "Document ID required to add comments"
+                            : "Add another comment"
+                        }
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Add Comment</span>
+                      </button>
                     )}
-                  </div>
+                  </>
+                ) : (
+                  <>
+                    {/* UPDATED: When no comments exist, show centered empty state */}
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center space-x-2">
+                        <MessageCircle className="w-4 h-4 text-purple-500" />
+                        <h4 className="font-medium text-gray-900">Comments</h4>
+                        <span className="bg-purple-100 text-purple-800 text-xs px-2 py-1 rounded-full">
+                          0
+                        </span>
+                      </div>
+                    </div>
 
-                  {/* Close Comments Section Button */}
-                  <button
-                    onClick={() => {
-                      setShowCommentsSection(false);
-                      setIsAddingComment(false);
-                      setNewCommentText("");
-                    }}
-                    className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-200 rounded-md transition-colors"
-                    title="Close comments section"
-                  >
-                    <X className="w-4 h-4" />
-                  </button>
-                </div>
+                    <button
+                      onClick={() => setIsAddingComment(true)}
+                      className="flex items-center space-x-2 px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm mx-auto"
+                      disabled={!currentDocId}
+                      title={
+                        !currentDocId
+                          ? "Document ID required to add comments"
+                          : "Add first comment"
+                      }
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Add First Comment</span>
+                    </button>
+                  </>
+                )}
 
-                {/* Add Comment Form with API Integration */}
+                {/* Add Comment Form - shown when adding a comment */}
                 {isAddingComment && (
-                  <div className="mb-4 p-3 bg-white rounded-lg border border-gray-200">
+                  <div className="p-3 bg-white rounded-lg border border-gray-200">
                     <textarea
                       value={newCommentText}
                       onChange={(e) => setNewCommentText(e.target.value)}
@@ -1290,123 +1436,6 @@ const CodeCard: React.FC<CodeCardProps> = ({
                     )}
                   </div>
                 )}
-
-                {/* Add Another Comment Button - Only show when not currently adding a comment */}
-                {!isAddingComment && (
-                  <div className="mb-4">
-                    <button
-                      onClick={() => setIsAddingComment(true)}
-                      className="flex items-center space-x-1 px-3 py-1.5 bg-purple-600 text-white rounded-md hover:bg-purple-700 transition-colors text-sm"
-                      disabled={!currentDocId}
-                      title={
-                        !currentDocId
-                          ? "Document ID required to add comments"
-                          : "Add another comment"
-                      }
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>Add Comment</span>
-                    </button>
-                  </div>
-                )}
-
-                {/* Comments List with enhanced added_by display */}
-                <div className="space-y-3">
-                  {commentsCount > 0 ? (
-                    (code.comments || []).map((comment) => (
-                      <div
-                        key={comment.id}
-                        className="bg-white rounded-lg p-3 border border-gray-200 group"
-                      >
-                        <div className="flex items-start justify-between mb-2">
-                          <div className="flex items-center space-x-2">
-                            <div className="w-6 h-6 bg-purple-100 rounded-full flex items-center justify-center">
-                              {comment.added_by ? (
-                                <UserCheck className="w-3 h-3 text-purple-600" />
-                              ) : (
-                                <User className="w-3 h-3 text-purple-600" />
-                              )}
-                            </div>
-                            <div className="flex items-center space-x-2 text-xs text-gray-600">
-                              <span className="font-medium text-gray-900">
-                                {comment.author}
-                              </span>
-                              {comment.added_by &&
-                                comment.added_by !== comment.author && (
-                                  <>
-                                    <span>•</span>
-                                    <span className="text-purple-600 font-medium">
-                                      Added by: {comment.added_by}
-                                    </span>
-                                  </>
-                                )}
-                            </div>
-                          </div>
-
-                          <div className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button
-                              onClick={() => handleEditComment(comment)}
-                              className="p-1 text-gray-500 hover:text-purple-600 hover:bg-purple-50 rounded-md transition-colors"
-                              title="Edit comment"
-                            >
-                              <Edit2 className="w-3 h-3" />
-                            </button>
-                            <button
-                              onClick={() => handleDeleteComment(comment.id)}
-                              className="p-1 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                              title="Delete comment"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                            </button>
-                          </div>
-                        </div>
-
-                        {editingCommentId === comment.id ? (
-                          <div className="space-y-2">
-                            <textarea
-                              value={editingCommentText}
-                              onChange={(e) =>
-                                setEditingCommentText(e.target.value)
-                              }
-                              rows={3}
-                              className="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-purple-500 focus:border-transparent text-sm resize-none"
-                            />
-                            <div className="flex items-center justify-end space-x-2">
-                              <button
-                                onClick={handleCancelEditComment}
-                                className="flex items-center space-x-1 px-2 py-1 text-gray-600 hover:text-gray-800 transition-colors text-xs"
-                              >
-                                <X className="w-3 h-3" />
-                                <span>Cancel</span>
-                              </button>
-                              <button
-                                onClick={handleSaveEditComment}
-                                disabled={!editingCommentText.trim()}
-                                className="flex items-center space-x-1 px-2 py-1 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors text-xs"
-                              >
-                                <Save className="w-3 h-3" />
-                                <span>Save</span>
-                              </button>
-                            </div>
-                          </div>
-                        ) : (
-                          <p className="text-sm text-gray-800 leading-relaxed whitespace-pre-wrap">
-                            {comment.text}
-                          </p>
-                        )}
-                      </div>
-                    ))
-                  ) : (
-                    <div className="text-center py-6">
-                      <MessageCircle className="w-8 h-8 text-gray-300 mx-auto mb-2" />
-                      <p className="text-sm text-gray-500">No comments yet</p>
-                      <p className="text-xs text-gray-400 mt-1">
-                        Add the first comment to start the discussion about this
-                        ICD suggestion
-                      </p>
-                    </div>
-                  )}
-                </div>
               </div>
             )}
 
